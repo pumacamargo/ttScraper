@@ -93,7 +93,7 @@ scrapearBtn.addEventListener('click', () => {
             let webhookUrl;
             if (scrapedData.type === 'product') {
               // Webhook para productos de TikTok Shop
-              webhookUrl = 'https://flows.lemonsushi.com/webhook-test/ttchop_productScrapper';
+              webhookUrl = 'https://flows.lemonsushi.com/webhook/ttchop_productScrapper';
             } else {
               // Webhook para analytics de videos
               webhookUrl = 'https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics';

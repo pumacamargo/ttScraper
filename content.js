@@ -1,7 +1,7 @@
 // Content script - Se ejecuta en el contexto de la página de TikTok
 
 // --- VERSIÓN DEL SCRAPER (definida una sola vez) ---
-const SCRAPER_VERSION = '2.0.3';
+const SCRAPER_VERSION = '2.0.7';
 
 console.log('[TikTok Scraper] Content script cargado - Versión:', SCRAPER_VERSION);
 

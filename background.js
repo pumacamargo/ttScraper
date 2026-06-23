@@ -1,6 +1,6 @@
 // Background service worker
 const WEBHOOK_ANALYTICS = 'https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics';
-const WEBHOOK_PRODUCT = 'https://flows.lemonsushi.com/webhook-test/ttchop_productScrapper';
+const WEBHOOK_PRODUCT = 'https://flows.lemonsushi.com/webhook/ttchop_productScrapper';
 
 // Al hacer click en el icono de la extensión
 chrome.action.onClicked.addListener((tab) => {
