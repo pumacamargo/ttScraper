@@ -87,9 +87,19 @@ scrapearBtn.addEventListener('click', () => {
           showStatus(`✅ ${tipoData} scrapeado. Enviando a webhook...`, 'info');
           console.log('Datos capturados:', scrapedData);
 
-          // Enviar automáticamente al webhook
+          // Enviar automáticamente al webhook correspondiente
           try {
-            const webhookUrl = 'https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics';
+            // Determinar webhook basado en el tipo de data
+            let webhookUrl;
+            if (scrapedData.type === 'product') {
+              // Webhook para productos de TikTok Shop
+              webhookUrl = 'https://flows.lemonsushi.com/webhook-test/ttchop_productScrapper';
+            } else {
+              // Webhook para analytics de videos
+              webhookUrl = 'https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics';
+            }
+
+            console.log('Enviando a webhook:', webhookUrl);
 
             const fetchResponse = await fetch(webhookUrl, {
               method: 'POST',

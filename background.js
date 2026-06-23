@@ -1,5 +1,6 @@
 // Background service worker
-const WEBHOOK_URL = 'https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics';
+const WEBHOOK_ANALYTICS = 'https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics';
+const WEBHOOK_PRODUCT = 'https://flows.lemonsushi.com/webhook-test/ttchop_productScrapper';
 
 // Al hacer click en el icono de la extensión
 chrome.action.onClicked.addListener((tab) => {
@@ -20,9 +21,13 @@ chrome.action.onClicked.addListener((tab) => {
         const data = response.data;
         console.log('[Background] Datos recibidos:', data);
 
-        // Enviar al webhook
+        // Determinar webhook basado en el tipo de data
+        const webhookUrl = data.type === 'product' ? WEBHOOK_PRODUCT : WEBHOOK_ANALYTICS;
+        console.log('[Background] Enviando a:', webhookUrl);
+
+        // Enviar al webhook correspondiente
         try {
-          const fetchResponse = await fetch(WEBHOOK_URL, {
+          const fetchResponse = await fetch(webhookUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -32,7 +37,8 @@ chrome.action.onClicked.addListener((tab) => {
 
           if (fetchResponse.ok) {
             console.log('[Background] Datos enviados correctamente');
-            showNotification('✅ Éxito', 'Datos enviados correctamente al webhook');
+            const dataType = data.type === 'product' ? 'Producto' : 'Video Analytics';
+            showNotification('✅ Éxito', `${dataType} enviado correctamente al webhook`);
           } else {
             console.error('[Background] Error en respuesta:', fetchResponse.status);
             showNotification('❌ Error', `Error del servidor: ${fetchResponse.status}`);

@@ -47,16 +47,20 @@ The extension follows the standard Chrome Extension Manifest v3 architecture wit
 - Provides user interface with three main buttons: Scrapear (Scrape), Enviar (Send), Limpiar (Clear)
 - Manages webhook URL persistence using Chrome storage API (with localStorage fallback)
 - Handles communication with content script to trigger scraping
-- Auto-sends data to the hardcoded webhook URL (`https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics`) after scraping
-- Also allows manual send to custom webhook URL via input field
+- **Auto-routes to correct webhook based on data type**:
+  - Product data → `https://flows.lemonsushi.com/webhook-test/ttchop_productScrapper`
+  - Video analytics → `https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics`
+- Also allows manual send to custom webhook URL via input field (user-provided URL)
 - Displays real-time status messages to user
 - Uses CSS classes for styling status messages (`status`, `info`, `success`, `error`)
 
 ### 3. **Background Service Worker** (`background.js`)
 - Activates when user clicks extension icon
 - Triggers data scraping from content script
-- Sends data to webhook on successful scrape
-- Shows notifications using Chrome notifications API
+- **Auto-routes to correct webhook based on data type**:
+  - Product data → `https://flows.lemonsushi.com/webhook-test/ttchop_productScrapper`
+  - Video analytics → `https://flows.lemonsushi.com/webhook/ttchop_ttAnalytics`
+- Shows notifications using Chrome notifications API indicating data type and result
 - Note: This may be redundant with popup functionality but handles icon-click actions
 
 ### 4. **Configuration** (`manifest.json`)
