@@ -1,7 +1,7 @@
 // Content script - Se ejecuta en el contexto de la página de TikTok
 
 // --- VERSIÓN DEL SCRAPER (definida una sola vez) ---
-const SCRAPER_VERSION = '2.0.1';
+const SCRAPER_VERSION = '2.0.2';
 
 console.log('[TikTok Scraper] Content script cargado - Versión:', SCRAPER_VERSION);
 
@@ -470,6 +470,42 @@ function getProductImages(productTitle) {
   }
 }
 
+function checkFreeShipping() {
+  try {
+    // 1. Obtener todo el texto plano de la página en minúsculas
+    const bodyText = (document.body.innerText || '').toLowerCase();
+
+    // 2. Verificar si incluye los términos oficiales de envío gratis de TikTok Shop
+    if (
+      bodyText.includes('free shipping') ||
+      bodyText.includes('送料無料') ||
+      bodyText.includes('無料配送')
+    ) {
+      console.log('[TikTok Scraper] Free shipping detectado (texto plano)');
+      return true;
+    }
+
+    // 3. Fallback visual: Buscar si hay algún elemento independiente que contenga solo el texto
+    const elements = Array.from(document.querySelectorAll('span, div, p'));
+    const hasVisualBadge = elements.some(el => {
+      if (!el.innerText) return false;
+      const text = el.innerText.trim().toLowerCase();
+      return text === 'free shipping' || text === '送料無料';
+    });
+
+    if (hasVisualBadge) {
+      console.log('[TikTok Scraper] Free shipping detectado (elemento visual)');
+      return true;
+    }
+
+    console.log('[TikTok Scraper] Sin free shipping detectado');
+    return false;
+  } catch (error) {
+    console.error('[TikTok Scraper] Error en checkFreeShipping:', error);
+    return false;
+  }
+}
+
 function scrapeTikTokShopProduct() {
   try {
     console.log('[TikTok Scraper] Iniciando scrapeado dinámico de producto...');
@@ -578,12 +614,21 @@ function scrapeTikTokShopProduct() {
     const mediaUrls = getProductImages(title);
     console.log('[TikTok Scraper] Imágenes encontradas:', mediaUrls.length);
 
+    // --- 8. ENVÍO GRATIS (Free Shipping) ---
+    let free_shipping = false;
+    try {
+      free_shipping = checkFreeShipping();
+    } catch (e) {
+      console.error('[TikTok Scraper] Error en free shipping:', e);
+    }
+
     // --- ESTRUCTURA FINAL ---
     const data = {
       scraper_version: SCRAPER_VERSION,
       title: title,
       timestamp: new Date().toISOString(),
       type: 'product',
+      free_shipping: free_shipping,
       price: priceData,
       social_proof: socialProof,
       seller_info: sellerInfo,
