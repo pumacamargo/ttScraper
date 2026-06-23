@@ -27,13 +27,19 @@ The extension follows the standard Chrome Extension Manifest v3 architecture wit
 - Extracts comprehensive product information using **dynamic, pattern-based extraction** instead of fixed CSS selectors
 - **Key extraction strategies**:
   1. **Title**: Searches `h1`/`h2` elements by text length (5-200 chars), falls back to `document.title`
-  2. **Pricing** (`getPriceData()` helper):
-     - **Step 1**: Search for discount pattern (`-XX%`) in leaf elements (no children)
-     - **Step 2**: Find numeric prices matching pattern `1,234` (numbers with comma grouping)
-     - **Step 3**: Classify prices by `font-size` (larger = current, smaller or strikethrough = original)
-     - **Step 4**: Fallback to regex pattern matching for `3,222円` or `¥3,222` format
-     - Robust against TikTok's variable HTML structure (prices may be in separate nodes)
-  3. **Social Proof**: Uses regex patterns for rating (decimal format), reviews count (number + "reviews"), sales volume (number + "sold")
+  2. **Pricing** (`getUniversalPrice()` helper):
+     - **Works with or without discounts** - handles products like umbrellas (with discount) or creatine (without)
+     - **Step 1**: Find current price by matching `1,234` format OR plain numbers in parent containing 円
+     - **Step 2**: Fallback to regex matching `[Number] 円` if element search fails
+     - **Step 3**: Find original price (strikethrough text with numbers) if discount exists
+     - **Step 4**: Extract discount pattern (`-XX%`) if present
+     - Cleans all non-numeric characters (asterisks, commas, spaces) from price strings
+  3. **Social Proof** (`getSocialProofClean()` helper):
+     - **Rating**: Extracts decimal 1.0-5.0 format ONLY (avoids false positives like 99.9% from product title)
+       - Primary: Matches `[1-5].[0-9]` followed by ★, *, "global reviews", or parenthesis
+       - Fallback: Finds element containing exact decimal in range 1.0-5.0
+     - **Reviews Count**: Searches for `[Number] (global reviews|reviews|)` pattern
+     - **Sales Volume**: Matches `[Number][K?] sold` pattern (e.g., "1.2K sold" or "500 sold")
   4. **Seller Info**: Pattern matching for "Sold by" or "Seller:" text
   5. **Variants**: Iteratively finds containers with `[class*="variant"]`, `[class*="option"]`, etc.; extracts labels and associated buttons
   6. **Product Description** (`getUniversalDescription()` helper):
@@ -128,12 +134,15 @@ The extension follows the standard Chrome Extension Manifest v3 architecture wit
 
 ## Data Structure
 
+All JSON responses include a `scraper_version` field (internal versioning for debugging) to track which scraper version produced the data.
+
 The extension extracts and sends different JSON structures depending on the page type:
 
 ### Video Analytics Data
 
 ```javascript
 {
+  scraper_version: '2.0.0',
   timestamp: ISO string,
   videoId: string,
   username: string,
@@ -159,6 +168,7 @@ The extension extracts and sends different JSON structures depending on the page
 
 ```javascript
 {
+  scraper_version: '2.0.0',               // Internal version for debugging
   title: string,                          // Product title extracted from h1/h2
   timestamp: ISO string,                  // Scraping timestamp
   type: 'product',

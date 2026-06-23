@@ -51,6 +51,7 @@ function scrapeTikTokAnalytics() {
     const publicUrl = username && videoId ? `https://www.tiktok.com/@${username}/video/${videoId}` : '';
 
     const data = {
+      scraper_version: '2.0.0',
       timestamp: new Date().toISOString(),
       videoId: videoId,
       username: username,
@@ -265,97 +266,61 @@ function getUniversalDescription() {
   }
 }
 
-// --- FUNCIÓN AUXILIAR: Extrae precios con estrategia robusta ---
-function getPriceData() {
+// --- FUNCIÓN AUXILIAR: Extrae precios totalmente limpios (con o sin descuento) ---
+function getUniversalPrice() {
   try {
-    console.log('[TikTok Scraper] Iniciando extracción de precios...');
+    console.log('[TikTok Scraper] Iniciando extracción universal de precios...');
 
-    const priceData = {
-      current: null,
-      original: null,
-      discount: null
-    };
-
-    // 1. BUSCAR DESCUENTO (Patrón: -XX%)
+    const priceData = { current: null, original: null, discount: null };
     const allElements = Array.from(document.querySelectorAll('*'));
-    const discountEl = allElements.find(el => {
-      // Solo elementos sin hijos (nodos de texto)
-      return el.children.length === 0 && /^-\d+%$/.test(el.innerText.trim());
+
+    // 1. BUSCAR PRECIO ACTUAL (Número antes de 円 o elemento con solo números)
+    const priceContainer = allElements.find(el => {
+      const text = el.innerText.trim();
+      // Patrón: número con comas (1,234) O elemento que contiene 円 en su padre
+      const hasNumberFormat = /^\d{1,3}(,\d{3})+$/.test(text);
+      const isPlainNumber = el.children.length === 0 && /^\d+$/.test(text.replace(/,/g, ''));
+      const parentHasYen = el.parentElement && el.parentElement.innerText.includes('円');
+
+      return (hasNumberFormat && el.children.length === 0) ||
+             (isPlainNumber && parentHasYen);
     });
+
+    if (priceContainer) {
+      priceData.current = priceContainer.innerText.trim().replace(/[,\s*]/g, '');
+      console.log('[TikTok Scraper] Precio actual encontrado:', priceData.current);
+    } else {
+      // FALLBACK: Buscar "[Número] 円" en todo el texto de la página
+      console.log('[TikTok Scraper] Usando fallback de búsqueda de patrón 円...');
+      const bodyText = document.body.innerText;
+      const match = bodyText.match(/([0-9,]+)\s*円/);
+      if (match) {
+        priceData.current = match[1].replace(/,/g, '');
+        console.log('[TikTok Scraper] Precio actual (fallback):', priceData.current);
+      }
+    }
+
+    // 2. BUSCAR PRECIO ORIGINAL (Elemento tachado con números)
+    const struckPrice = allElements.find(el => {
+      const hasChildren = el.children.length === 0;
+      const isStrikethrough = window.getComputedStyle(el).textDecoration.includes('line-through');
+      const hasNumbers = /[\d,]+/.test(el.innerText);
+      return hasChildren && isStrikethrough && hasNumbers;
+    });
+
+    if (struckPrice) {
+      priceData.original = struckPrice.innerText.replace(/[^\d]/g, '');
+      console.log('[TikTok Scraper] Precio original encontrado:', priceData.original);
+    }
+
+    // 3. BUSCAR DESCUENTO (Patrón: -XX%)
+    const discountEl = allElements.find(el =>
+      el.children.length === 0 && /^-\d+%$/.test(el.innerText.trim())
+    );
 
     if (discountEl) {
       priceData.discount = discountEl.innerText.trim();
       console.log('[TikTok Scraper] Descuento encontrado:', priceData.discount);
-    }
-
-    // 2. BUSCAR PRECIOS NUMÉRICOS (Patrón: 1,234 o 12,345)
-    const potentialPrices = allElements
-      .filter(el => {
-        const text = el.innerText.trim();
-        // Solo elementos sin hijos con patrón numérico de millares
-        return el.children.length === 0 && /^\d{1,3}(,\d{3})+$/.test(text);
-      })
-      .map(el => {
-        const text = el.innerText.trim().replace(/,/g, '');
-        const style = window.getComputedStyle(el);
-        const fontSize = parseFloat(style.fontSize) || 0;
-        const textDecoration = style.textDecoration;
-
-        return {
-          text: text,
-          fontSize: fontSize,
-          textDecoration: textDecoration,
-          element: el
-        };
-      });
-
-    console.log('[TikTok Scraper] Precios potenciales encontrados:', potentialPrices.length);
-
-    if (potentialPrices.length > 0) {
-      // El precio actual tiene el font-size más grande
-      const currentPriceObj = potentialPrices.reduce(
-        (max, p) => p.fontSize > max.fontSize ? p : max,
-        potentialPrices[0]
-      );
-
-      priceData.current = currentPriceObj.text;
-      console.log('[TikTok Scraper] Precio actual:', priceData.current, '(fontSize:', currentPriceObj.fontSize + 'px)');
-
-      // El precio original está tachado O tiene font-size más pequeño
-      const originalPriceObj = potentialPrices.find(p => {
-        const isDifferent = p.text !== currentPriceObj.text;
-        const isStrikethrough = p.textDecoration.includes('line-through');
-        const isSmallerFont = p.fontSize < currentPriceObj.fontSize;
-
-        return isDifferent && (isStrikethrough || isSmallerFont);
-      });
-
-      if (originalPriceObj) {
-        priceData.original = originalPriceObj.text;
-        console.log('[TikTok Scraper] Precio original:', priceData.original, '(fontSize:', originalPriceObj.fontSize + 'px)');
-      }
-    }
-
-    // 3. FALLBACK: Buscar patrón "3,222円" en el texto de la página
-    if (!priceData.current) {
-      console.log('[TikTok Scraper] Usando fallback de búsqueda en texto...');
-      const bodyText = document.body.innerText;
-
-      // Patrón: número con comas + símbolo yen
-      const currentMatch = bodyText.match(/(\d{1,3}(?:,\d{3})+)\s*[円¥]/);
-      if (currentMatch) {
-        priceData.current = currentMatch[1].replace(/,/g, '');
-        console.log('[TikTok Scraper] Precio actual (fallback):', priceData.current);
-      }
-
-      // Buscar precio original con patrón similar (si existe descuento)
-      if (priceData.discount) {
-        const prices = bodyText.match(/(\d{1,3}(?:,\d{3})+)\s*[円¥]/g) || [];
-        if (prices.length > 1) {
-          priceData.original = prices[1].match(/(\d+(?:,\d{3})+)/)[1].replace(/,/g, '');
-          console.log('[TikTok Scraper] Precio original (fallback):', priceData.original);
-        }
-      }
     }
 
     console.log('[TikTok Scraper] Datos de precio extraídos:', priceData);
@@ -363,11 +328,57 @@ function getPriceData() {
 
   } catch (error) {
     console.error('[TikTok Scraper] Error extrayendo precios:', error);
-    return {
-      current: null,
-      original: null,
-      discount: null
-    };
+    return { current: null, original: null, discount: null };
+  }
+}
+
+// --- FUNCIÓN AUXILIAR: Extrae social proof sin falsos positivos ---
+function getSocialProofClean() {
+  try {
+    console.log('[TikTok Scraper] Iniciando extracción de social proof...');
+
+    const social = { rating: null, reviews_count: null, sales_volume: null };
+    const bodyText = document.body.innerText;
+
+    // 1. BUSCAR VOLUMEN DE VENTAS (Patrón: "1.2K sold" o "500 sold")
+    const salesMatch = bodyText.match(/([\d\.]+K?\s*sold)/i);
+    if (salesMatch) {
+      social.sales_volume = salesMatch[1];
+      console.log('[TikTok Scraper] Volumen de ventas:', social.sales_volume);
+    }
+
+    // 2. BUSCAR RECUENTO DE RESEÑAS (Patrón: "74 global reviews" o "( 74 )")
+    const reviewsMatch = bodyText.match(/(\d+)\s*(global reviews|reviews|\))/i);
+    if (reviewsMatch) {
+      social.reviews_count = reviewsMatch[1];
+      console.log('[TikTok Scraper] Cantidad de reseñas:', social.reviews_count);
+    }
+
+    // 3. BUSCAR RATING REAL (Número decimal 1.0-5.0 cercano a reseñas, evitando porcentajes)
+    // Patrón: Un decimal entre 1.0 y 5.0 cerca de ★, *, "global reviews" o paréntesis
+    const ratingMatch = bodyText.match(/([1-5]\.[0-9])\s*(★|\*|global reviews|\()/);
+    if (ratingMatch) {
+      social.rating = ratingMatch[1];
+      console.log('[TikTok Scraper] Rating encontrado (patrón regex):', social.rating);
+    } else {
+      // FALLBACK: Buscar elemento con decimal entre 1.0 y 5.0
+      console.log('[TikTok Scraper] Usando fallback de búsqueda de rating...');
+      const allElements = Array.from(document.querySelectorAll('*'));
+      const ratingEl = allElements.find(el =>
+        el.children.length === 0 && /^[1-5]\.[0-9]$/.test(el.innerText.trim())
+      );
+      if (ratingEl) {
+        social.rating = ratingEl.innerText.trim();
+        console.log('[TikTok Scraper] Rating encontrado (elemento):', social.rating);
+      }
+    }
+
+    console.log('[TikTok Scraper] Social proof extraído:', social);
+    return social;
+
+  } catch (error) {
+    console.error('[TikTok Scraper] Error extrayendo social proof:', error);
+    return { rating: null, reviews_count: null, sales_volume: null };
   }
 }
 
@@ -473,38 +484,11 @@ function scrapeTikTokShopProduct() {
       console.log('[TikTok Scraper] Título (fallback):', title);
     }
 
-    // --- 2. PRECIOS (Extracción robusta por patrón y CSS) ---
-    const priceData = getPriceData();
+    // --- 2. PRECIOS (Extracción universal limpia - con o sin descuento) ---
+    const priceData = getUniversalPrice();
 
-    // --- 3. SOCIAL PROOF (Rating, Reviews, Sales) ---
-    const socialProof = {
-      rating: null,
-      reviews_count: null,
-      sales_volume: null
-    };
-
-    const allText = document.body.innerText;
-
-    // Buscar rating (patrón: número.número)
-    const ratingMatch = allText.match(/(\d+\.\d+)\s*(stars?|rating)?/);
-    if (ratingMatch) {
-      socialProof.rating = ratingMatch[1];
-      console.log('[TikTok Scraper] Rating:', socialProof.rating);
-    }
-
-    // Buscar cantidad de reviews
-    const reviewsMatch = allText.match(/(\d+(?:,\d+)?)\s*(reviews?|feedbacks?)/i);
-    if (reviewsMatch) {
-      socialProof.reviews_count = reviewsMatch[1];
-      console.log('[TikTok Scraper] Reviews:', socialProof.reviews_count);
-    }
-
-    // Buscar volumen de ventas
-    const soldMatch = allText.match(/(\d+(?:\.\d+)?[KM]?)\s*sold/i);
-    if (soldMatch) {
-      socialProof.sales_volume = soldMatch[0];
-      console.log('[TikTok Scraper] Volumen de ventas:', socialProof.sales_volume);
-    }
+    // --- 3. SOCIAL PROOF (Rating, Reviews, Sales - Extracción limpia) ---
+    const socialProof = getSocialProofClean();
 
     // --- 4. INFORMACIÓN DEL VENDEDOR ---
     const sellerInfo = { name: null };
@@ -577,6 +561,7 @@ function scrapeTikTokShopProduct() {
 
     // --- ESTRUCTURA FINAL ---
     const data = {
+      scraper_version: '2.0.0',
       title: title,
       timestamp: new Date().toISOString(),
       type: 'product',
