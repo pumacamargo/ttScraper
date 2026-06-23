@@ -1,6 +1,9 @@
 // Content script - Se ejecuta en el contexto de la página de TikTok
 
-console.log('[TikTok Scraper] Content script cargado');
+// --- VERSIÓN DEL SCRAPER (definida una sola vez) ---
+const SCRAPER_VERSION = '2.0.1';
+
+console.log('[TikTok Scraper] Content script cargado - Versión:', SCRAPER_VERSION);
 
 // Función para detectar el tipo de página
 function detectPageType() {
@@ -51,7 +54,7 @@ function scrapeTikTokAnalytics() {
     const publicUrl = username && videoId ? `https://www.tiktok.com/@${username}/video/${videoId}` : '';
 
     const data = {
-      scraper_version: '2.0.0',
+      scraper_version: SCRAPER_VERSION,
       timestamp: new Date().toISOString(),
       videoId: videoId,
       username: username,
@@ -194,71 +197,73 @@ function scrapeTikTokAnalytics() {
   }
 }
 
-// --- FUNCIÓN AUXILIAR: Extrae descripción universal agnóstica a formato ---
+// --- FUNCIÓN AUXILIAR: Extrae descripción refinada con búsqueda de ancestros ---
 function getUniversalDescription() {
   try {
-    console.log('[TikTok Scraper] Iniciando extracción universal de descripción...');
+    console.log('[TikTok Scraper] Iniciando extracción refinada de descripción...');
 
-    const descriptionLines = [];
+    const points = [];
 
-    // 1. LOCALIZAR ENCABEZADO DE DESCRIPCIÓN (Soporta múltiples idiomas)
-    const headers = Array.from(document.querySelectorAll('h2, h3, h4, strong, div, span, label'));
-    const targetHeader = headers.find(el => {
-      const text = el.innerText.trim().toLowerCase();
-      return text.includes('about this product') ||
-             text.includes('product description') ||
-             text.includes('商品説明') ||
-             text.includes('商品の説明') ||
-             text.includes('description') ||
-             text.includes('details') ||
-             text.includes('features') ||
-             text.includes('specifications') ||
-             text.includes('説明');
+    // 1. BUSCAR TODOS LOS ELEMENTOS DE LA PÁGINA
+    const elements = Array.from(document.querySelectorAll('*'));
+
+    // 2. ENCONTRAR EL NODO QUE CONTIENE EL ENCABEZADO
+    const descHeader = elements.find(el => {
+      if (!el.innerText) return false; // Proteger contra innerText undefined
+      const text = el.innerText.trim();
+      return text === 'About this product' ||
+             text === 'Product description' ||
+             text === '商品説明' ||
+             text === 'About this product';
     });
 
-    if (targetHeader) {
-      console.log('[TikTok Scraper] Encabezado de descripción encontrado:', targetHeader.innerText.trim().substring(0, 50));
+    if (descHeader) {
+      console.log('[TikTok Scraper] Encabezado de descripción encontrado:', descHeader.innerText.trim());
 
-      // 2. APUNTAR AL CONTENEDOR QUE ALMACENA EL TEXTO
-      const container = targetHeader.nextElementSibling || targetHeader.parentElement;
+      // 3. SUBIR DOS NIVELES EN EL DOM PARA ASEGURAR CONTENEDOR RAÍZ
+      // TikTok mete el encabezado y contenido dentro de un contenedor padre común
+      let sectionContainer = descHeader.parentElement;
+      if (sectionContainer) {
+        sectionContainer = sectionContainer.parentElement;
+      }
 
-      if (container) {
-        // 3. TOMAR EL TEXTO PLANO COMPLETO TAL CUAL SE RENDERIZA
-        const rawText = container.innerText || '';
+      if (sectionContainer) {
+        console.log('[TikTok Scraper] Contenedor de sección encontrado');
+
+        // 4. EXTRAER TODO EL TEXTO PLANO ACUMULADO EN ESA SECCIÓN
+        const rawText = sectionContainer.innerText || '';
         console.log('[TikTok Scraper] Longitud del texto extraído:', rawText.length, 'caracteres');
 
-        // 4. ROMPER EL TEXTO POR LÍNEAS PARA PROCESARLAS INDIVIDUALMENTE
-        const rawLines = rawText.split('\n');
-        console.log('[TikTok Scraper] Total de líneas encontradas:', rawLines.length);
+        const lines = rawText.split('\n');
+        console.log('[TikTok Scraper] Total de líneas encontradas:', lines.length);
 
-        rawLines.forEach((line, index) => {
-          const cleanedLine = line.trim()
-            // Remueve viñetas, puntos, guiones, emojis comunes al inicio
-            .replace(/^[・\*\-\•\s📌✅🔹▪️【】\[\]]+/, '')
+        lines.forEach((line, index) => {
+          const cleaned = line.trim()
+            // Limpia viñetas de punto medio (·), asteriscos, guiones, emojis y espacios
+            .replace(/^[・\*\-\•\·\s📌✅🔹▪️【】\[\]]+/, '')
             .trim();
 
-          // FILTROS DE EXCLUSIÓN PARA EVITAR BASURA
-          const isValid = cleanedLine &&
-                         cleanedLine !== targetHeader.innerText.trim() && // No duplicar el título
-                         cleanedLine.length > 5 && // Evita líneas muy cortas
-                         !cleanedLine.toLowerCase().includes('view more') &&
-                         !cleanedLine.toLowerCase().includes('see more') &&
-                         !cleanedLine.toLowerCase().includes('read more') &&
-                         !cleanedLine.toLowerCase().includes('もっと見る') && // "Ver más" en japonés
-                         !cleanedLine.includes('...') &&
-                         cleanedLine.length < 500 && // Evita textos demasiado largos
-                         !descriptionLines.includes(cleanedLine); // Evita duplicados
+          // FILTROS DE EXCLUSIÓN ESTRICTOS
+          const isValid = cleaned &&
+                         cleaned !== 'About this product' &&
+                         cleaned !== 'Product description' &&
+                         cleaned !== '商品説明' &&
+                         !cleaned.toLowerCase().includes('view more') && // Ignora botón expansor
+                         cleaned.length > 8 && // Evita fragmentos o títulos sueltos
+                         !cleaned.toLowerCase().includes('もっと見る'); // "Ver más" en japonés
 
           if (isValid) {
-            descriptionLines.push(cleanedLine);
-            console.log(`[TikTok Scraper] Línea ${index}:`, cleanedLine.substring(0, 60) + (cleanedLine.length > 60 ? '...' : ''));
+            points.push(cleaned);
+            console.log(`[TikTok Scraper] Punto ${index}:`, cleaned.substring(0, 60) + (cleaned.length > 60 ? '...' : ''));
           }
         });
       }
     }
 
-    console.log('[TikTok Scraper] Líneas de descripción extraídas:', descriptionLines.length);
-    return descriptionLines;
+    // ELIMINAR DUPLICADOS
+    const uniquePoints = [...new Set(points)];
+    console.log('[TikTok Scraper] Puntos de descripción extraídos (únicos):', uniquePoints.length);
+    return uniquePoints;
 
   } catch (error) {
     console.error('[TikTok Scraper] Error extrayendo descripción:', error);
@@ -568,7 +573,7 @@ function scrapeTikTokShopProduct() {
 
     // --- ESTRUCTURA FINAL ---
     const data = {
-      scraper_version: '2.0.0',
+      scraper_version: SCRAPER_VERSION,
       title: title,
       timestamp: new Date().toISOString(),
       type: 'product',

@@ -43,14 +43,15 @@ The extension follows the standard Chrome Extension Manifest v3 architecture wit
   4. **Seller Info**: Pattern matching for "Sold by" or "Seller:" text
   5. **Variants**: Iteratively finds containers with `[class*="variant"]`, `[class*="option"]`, etc.; extracts labels and associated buttons
   6. **Product Description** (`getUniversalDescription()` helper):
-     - **Format-agnostic**: Works with lists (`<li>`), text blocks (`<div>`), paragraphs (`<p>`), or any HTML element
-     - Locates description header semantically (supports EN/JP/multi-lang: "About", "商品説明", "Features", "説明", etc.)
-     - Extracts raw text from container using `.innerText` (preserves visual line breaks)
-     - Splits by line breaks (`\n`) to isolate individual lines/points
-     - Removes decorative characters at start of lines: ・, *, -, •, emoji, Japanese brackets 【】, etc.
-     - **Validation filters**: >5 chars, <500 chars, excludes "View more"/"もっと見る", removes duplicates
-     - Works with complex formats: bullet points, titles in brackets, paragraph blocks, mixed structures
-     - **Real-world examples**: Handles both bullet-based (・ワンタッチで自動開閉♪) and title-based (【最高純度99.9%】 パラグラフ completo) formats
+     - **Ancestor-based extraction**: Finds "About this product" header, then climbs 2 levels up DOM tree to reach section container (TikTok's layout nests headers and content in multiple parent layers)
+     - **Format-agnostic**: Works with any HTML structure (lists, divs, spans, or plain text blocks)
+     - **Multi-language support**: Detects "About this product", "Product description", "商品説明"
+     - Extracts entire section text using `.innerText` (preserves visual line breaks as they appear)
+     - Splits by `\n` to isolate individual marketing points
+     - Removes decorative characters: ・, *, -, •, ·, emoji, Japanese brackets 【】, etc.
+     - **Validation filters**: >8 chars (avoids fragments), excludes "View more"/"もっと見る", filters exact header matches
+     - **Deduplicates** results using `Set` to prevent duplicate lines
+     - **Real-world examples**: Extracts benefit points from both bullet-based (・ワンタッチで自動開閉♪) and title-based (【最高純度99.9%】 paragraph text) formats
   7. **Media** (`getProductImages()` helper):
      - **Filter 1 - ALT Text**: Matches images with alt attribute containing first 12 chars of product title (most reliable)
      - **Filter 2 - CDN Origin**: Validates URLs from TikTok CDNs (tiktokcdn, tos-, /obj/, amazonaws), excludes avatars/icons/SVGs, checks for valid image formats (.jpg, .png, .webp, .gif)
