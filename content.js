@@ -193,6 +193,79 @@ function scrapeTikTokAnalytics() {
   }
 }
 
+// --- FUNCIÓN AUXILIAR: Extrae imágenes del producto con 3 filtros secuenciales ---
+function getProductImages(productTitle) {
+  try {
+    console.log('[TikTok Scraper] Iniciando extracción dinámica de imágenes...');
+
+    // 1. FILTRO POR ALT TEXT (Coincidencia con el Título)
+    const titleFragment = productTitle.substring(0, 12).toLowerCase().trim();
+    console.log('[TikTok Scraper] Fragmento de título para búsqueda:', titleFragment);
+
+    const allImages = Array.from(document.querySelectorAll('img'));
+    console.log('[TikTok Scraper] Total de imágenes en la página:', allImages.length);
+
+    // Imágenes que coinciden por ALT text
+    const imagesByAlt = allImages
+      .filter(img => img.alt && img.alt.toLowerCase().includes(titleFragment))
+      .map(img => img.src || img.getAttribute('data-src'))
+      .filter(src => src && src.length > 0);
+
+    console.log('[TikTok Scraper] Imágenes con ALT coincidente:', imagesByAlt.length);
+
+    // Si encontramos imágenes por ALT, usarlas
+    if (imagesByAlt.length > 0) {
+      console.log('[TikTok Scraper] Usando imágenes filtradas por ALT');
+      return [...new Set(imagesByAlt)]; // Retorna array único
+    }
+
+    // 2. FILTRO POR CDN DE TIKTOK (Si ALT no funciona)
+    const imagesByCDN = allImages
+      .map(img => img.src || img.getAttribute('data-src'))
+      .filter(src => {
+        if (!src) return false;
+
+        // Verificar que sea un CDN válido de TikTok
+        const isTikTokCDN = src.includes('tiktokcdn') ||
+                           src.includes('tos-') ||
+                           src.includes('/obj/') ||
+                           src.includes('p-') ||
+                           src.includes('amazonaws');
+
+        // Excluir iconos, avatares y SVGs
+        const isNotIcon = !src.toLowerCase().includes('avatar') &&
+                         !src.toLowerCase().includes('icon') &&
+                         !src.endsWith('.svg');
+
+        // Verificar formato de imagen válido
+        const isValidFormat = /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(src);
+
+        return isTikTokCDN && isNotIcon && isValidFormat;
+      });
+
+    console.log('[TikTok Scraper] Imágenes de CDN válidas encontradas:', imagesByCDN.length);
+
+    if (imagesByCDN.length > 0) {
+      console.log('[TikTok Scraper] Usando imágenes filtradas por CDN');
+      return [...new Set(imagesByCDN)]; // Retorna array único
+    }
+
+    // 3. FALLBACK: Imágenes grandes (>100x100)
+    const largeImages = allImages
+      .filter(img => (img.width || 0) > 100 && (img.height || 0) > 100)
+      .map(img => img.src || img.getAttribute('data-src'))
+      .filter(src => src && src.length > 0);
+
+    console.log('[TikTok Scraper] Imágenes grandes encontradas:', largeImages.length);
+
+    return [...new Set(largeImages)]; // Retorna array único
+
+  } catch (error) {
+    console.error('[TikTok Scraper] Error extrayendo imágenes:', error);
+    return [];
+  }
+}
+
 function scrapeTikTokShopProduct() {
   try {
     console.log('[TikTok Scraper] Iniciando scrapeado dinámico de producto...');
@@ -365,35 +438,8 @@ function scrapeTikTokShopProduct() {
 
     console.log('[TikTok Scraper] Puntos de marketing encontrados:', marketingPoints.length);
 
-    // --- 7. IMÁGENES DINÁMICAS ---
-    const mediaUrls = [];
-
-    // Buscar imágenes cuyo alt contenga el título del producto
-    const productImages = document.querySelectorAll('img');
-    productImages.forEach(img => {
-      const src = img.src || img.getAttribute('data-src');
-      const alt = img.getAttribute('alt') || '';
-
-      if (src && (alt.toLowerCase().includes(title.toLowerCase().split(' ')[0]) || src.includes('tos-') || src.includes('pdp'))) {
-        // Filtrar avatares pequeños (suelen ser muy pequeños)
-        if (img.width > 50 && img.height > 50) {
-          if (!mediaUrls.includes(src)) {
-            mediaUrls.push(src);
-          }
-        }
-      }
-    });
-
-    // Fallback: Si no hay imágenes específicas, tomar las primeras N imágenes grandes
-    if (mediaUrls.length === 0) {
-      productImages.forEach(img => {
-        const src = img.src || img.getAttribute('data-src');
-        if (src && img.width > 100 && img.height > 100 && !mediaUrls.includes(src)) {
-          mediaUrls.push(src);
-        }
-      });
-    }
-
+    // --- 7. IMÁGENES DINÁMICAS (Extracción robusta) ---
+    const mediaUrls = getProductImages(title);
     console.log('[TikTok Scraper] Imágenes encontradas:', mediaUrls.length);
 
     // --- ESTRUCTURA FINAL ---

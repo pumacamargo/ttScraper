@@ -32,9 +32,12 @@ The extension follows the standard Chrome Extension Manifest v3 architecture wit
   4. **Seller Info**: Pattern matching for "Sold by" or "Seller:" text
   5. **Variants**: Iteratively finds containers with `[class*="variant"]`, `[class*="option"]`, etc.; extracts labels and associated buttons
   6. **Marketing Points**: Scrapes `li`, features from description containers, removes bullet characters
-  7. **Media**: Collects images with matching alt-text or from CDN domains (tos-, pdp); filters by size > 50px
+  7. **Media** (`getProductImages()` helper):
+     - **Filter 1 - ALT Text**: Matches images with alt attribute containing first 12 chars of product title (most reliable)
+     - **Filter 2 - CDN Origin**: Validates URLs from TikTok CDNs (tiktokcdn, tos-, /obj/, amazonaws), excludes avatars/icons/SVGs, checks for valid image formats (.jpg, .png, .webp, .gif)
+     - **Filter 3 - Fallback**: Uses large images (>100x100) if other filters fail
+     - Deduplicates URLs using `Set`, handles lazy-loaded images via `data-src`
 - **Robustness**: Uses fallback strategies for each field; doesn't break if TikTok's class names change
-- Handles lazy-loaded images via `data-src` attribute
 
 - Includes error handling and extensive console logging for debugging
 - Sends data back to popup via Chrome message passing (listens for `scrapeTikTokAnalytics` action)
