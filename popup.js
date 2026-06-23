@@ -82,7 +82,9 @@ scrapearBtn.addEventListener('click', () => {
         if (response.success && response.data) {
           scrapedData = response.data;
           scrapedDataTextarea.value = JSON.stringify(scrapedData, null, 2);
-          showStatus('✅ Datos scrapeados. Enviando a webhook...', 'info');
+
+          const tipoData = scrapedData.type === 'product' ? 'producto' : 'video analytics';
+          showStatus(`✅ ${tipoData} scrapeado. Enviando a webhook...`, 'info');
           console.log('Datos capturados:', scrapedData);
 
           // Enviar automáticamente al webhook

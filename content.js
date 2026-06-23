@@ -2,6 +2,19 @@
 
 console.log('[TikTok Scraper] Content script cargado');
 
+// Función para detectar el tipo de página
+function detectPageType() {
+  const currentUrl = window.location.href;
+
+  if (currentUrl.includes('tiktokstudio/analytics')) {
+    return 'video_analytics';
+  } else if (currentUrl.includes('shop.tiktok.com')) {
+    return 'product';
+  } else {
+    return 'unknown';
+  }
+}
+
 function scrapeTikTokAnalytics() {
   try {
     console.log('[TikTok Scraper] Iniciando scrapeado...');
@@ -180,20 +193,276 @@ function scrapeTikTokAnalytics() {
   }
 }
 
+function scrapeTikTokShopProduct() {
+  try {
+    console.log('[TikTok Scraper] Iniciando scrapeado dinámico de producto...');
+
+    // --- FUNCIÓN AUXILIAR: Extrae números de un string ---
+    function extractNumber(text) {
+      const match = text.match(/[\d.]+/);
+      return match ? parseFloat(match[0]) : null;
+    }
+
+    // --- 1. TÍTULO DEL PRODUCTO ---
+    let title = '';
+    // Buscar h2 o h1 principal
+    const headerElements = document.querySelectorAll('h1, h2');
+    for (let el of headerElements) {
+      const text = el.textContent.trim();
+      if (text && text.length > 5 && text.length < 200) {
+        title = text;
+        console.log('[TikTok Scraper] Título encontrado:', title);
+        break;
+      }
+    }
+
+    // Fallback: usar document.title
+    if (!title) {
+      title = document.title.split('|')[0].trim() || 'Unknown Product';
+      console.log('[TikTok Scraper] Título (fallback):', title);
+    }
+
+    // --- 2. PRECIOS (Dinámico por patrón) ---
+    const priceData = { current: null, original: null, discount: null };
+    const priceSymbols = /[¥$€£₹]/;
+    const allText = document.body.innerText;
+
+    // Buscar todos los elementos con números y símbolos de moneda
+    const textElements = document.querySelectorAll('span, div, p');
+    const priceElements = [];
+
+    textElements.forEach(el => {
+      const text = el.textContent.trim();
+      if (priceSymbols.test(text) && /[\d.]+/.test(text)) {
+        priceElements.push(text);
+      }
+    });
+
+    // El primer precio suele ser el actual, el segundo el original
+    if (priceElements.length > 0) {
+      priceData.current = priceElements[0];
+      console.log('[TikTok Scraper] Precio actual:', priceData.current);
+    }
+    if (priceElements.length > 1) {
+      priceData.original = priceElements[1];
+      console.log('[TikTok Scraper] Precio original:', priceData.original);
+    }
+
+    // Buscar descuento (usualmente en porcentaje)
+    const discountMatch = allText.match(/(\d+)%\s*off/i) || allText.match(/save\s+(\d+)%/i);
+    if (discountMatch) {
+      priceData.discount = discountMatch[1] + '%';
+      console.log('[TikTok Scraper] Descuento:', priceData.discount);
+    }
+
+    // --- 3. SOCIAL PROOF (Rating, Reviews, Sales) ---
+    const socialProof = {
+      rating: null,
+      reviews_count: null,
+      sales_volume: null
+    };
+
+    // Buscar rating (patrón: número.número)
+    const ratingMatch = allText.match(/(\d+\.\d+)\s*(stars?|rating)?/);
+    if (ratingMatch) {
+      socialProof.rating = ratingMatch[1];
+      console.log('[TikTok Scraper] Rating:', socialProof.rating);
+    }
+
+    // Buscar cantidad de reviews
+    const reviewsMatch = allText.match(/(\d+(?:,\d+)?)\s*(reviews?|feedbacks?)/i);
+    if (reviewsMatch) {
+      socialProof.reviews_count = reviewsMatch[1];
+      console.log('[TikTok Scraper] Reviews:', socialProof.reviews_count);
+    }
+
+    // Buscar volumen de ventas
+    const soldMatch = allText.match(/(\d+(?:\.\d+)?[KM]?)\s*sold/i);
+    if (soldMatch) {
+      socialProof.sales_volume = soldMatch[0];
+      console.log('[TikTok Scraper] Volumen de ventas:', socialProof.sales_volume);
+    }
+
+    // --- 4. INFORMACIÓN DEL VENDEDOR ---
+    const sellerInfo = { name: null };
+    const soldByMatch = allText.match(/Sold\s+by\s+([^\n]+)/i) || allText.match(/Seller:\s*([^\n]+)/i);
+    if (soldByMatch) {
+      sellerInfo.name = soldByMatch[1].trim().split('\n')[0];
+      console.log('[TikTok Scraper] Vendedor:', sellerInfo.name);
+    }
+
+    // --- 5. VARIANTES DINÁMICAS (Colores, Tamaños, etc) ---
+    const variants = {};
+
+    // Detectar bloques de variantes iterativamente
+    const variantContainers = document.querySelectorAll('[class*="variant"], [class*="option"], [class*="select"]');
+
+    variantContainers.forEach(container => {
+      // Buscar el título de la variante (suele ser un label o texto fuerte)
+      const titleEl = container.querySelector('label, strong, [class*="label"], [class*="title"]');
+      if (!titleEl) return;
+
+      const variantName = titleEl.textContent.trim();
+      if (!variantName) return;
+
+      // Buscar todas las opciones interactivas (botones, spans, etc)
+      const options = [];
+      const optionElements = container.querySelectorAll('button, [role="button"], [class*="option"], [class*="choice"]');
+
+      optionElements.forEach(optionEl => {
+        const optionText = optionEl.textContent.trim();
+        if (optionText && !options.includes(optionText)) {
+          options.push(optionText);
+        }
+      });
+
+      if (options.length > 0) {
+        variants[variantName] = options;
+        console.log(`[TikTok Scraper] Variante ${variantName}:`, options);
+      }
+    });
+
+    // Fallback: Si no se encontraron variantes, buscar colores y tamaños genéricamente
+    if (Object.keys(variants).length === 0) {
+      console.log('[TikTok Scraper] Buscando variantes por patrones genéricos...');
+
+      // Buscar colores
+      const allButtons = document.querySelectorAll('button, [role="button"]');
+      const colorPattern = /^(red|blue|black|white|green|yellow|pink|purple|orange|gray|navy|beige|brown|gold|silver|rose|cream)/i;
+      const colors = [];
+      const sizes = [];
+
+      allButtons.forEach(btn => {
+        const text = btn.textContent.trim();
+        if (colorPattern.test(text) && !colors.includes(text)) {
+          colors.push(text);
+        } else if (/^(XS|S|M|L|XL|XXL|\d+\s*(cm|inch|mm))$/i.test(text) && !sizes.includes(text)) {
+          sizes.push(text);
+        }
+      });
+
+      if (colors.length > 0) variants['Color'] = colors;
+      if (sizes.length > 0) variants['Size'] = sizes;
+    }
+
+    // --- 6. PUNTOS DE MARKETING (Features/Descripción) ---
+    const marketingPoints = [];
+
+    // Buscar sección de descripción o features
+    const descContainers = document.querySelectorAll('[class*="description"], [class*="features"], [class*="about"]');
+
+    descContainers.forEach(container => {
+      const listItems = container.querySelectorAll('li, [class*="point"], [class*="feature"]');
+      listItems.forEach(item => {
+        const text = item.textContent.trim();
+        // Limpiar viñetas y caracteres especiales
+        const cleanText = text.replace(/^[\s・*\-•]+/, '').trim();
+        if (cleanText && !marketingPoints.includes(cleanText)) {
+          marketingPoints.push(cleanText);
+        }
+      });
+    });
+
+    console.log('[TikTok Scraper] Puntos de marketing encontrados:', marketingPoints.length);
+
+    // --- 7. IMÁGENES DINÁMICAS ---
+    const mediaUrls = [];
+
+    // Buscar imágenes cuyo alt contenga el título del producto
+    const productImages = document.querySelectorAll('img');
+    productImages.forEach(img => {
+      const src = img.src || img.getAttribute('data-src');
+      const alt = img.getAttribute('alt') || '';
+
+      if (src && (alt.toLowerCase().includes(title.toLowerCase().split(' ')[0]) || src.includes('tos-') || src.includes('pdp'))) {
+        // Filtrar avatares pequeños (suelen ser muy pequeños)
+        if (img.width > 50 && img.height > 50) {
+          if (!mediaUrls.includes(src)) {
+            mediaUrls.push(src);
+          }
+        }
+      }
+    });
+
+    // Fallback: Si no hay imágenes específicas, tomar las primeras N imágenes grandes
+    if (mediaUrls.length === 0) {
+      productImages.forEach(img => {
+        const src = img.src || img.getAttribute('data-src');
+        if (src && img.width > 100 && img.height > 100 && !mediaUrls.includes(src)) {
+          mediaUrls.push(src);
+        }
+      });
+    }
+
+    console.log('[TikTok Scraper] Imágenes encontradas:', mediaUrls.length);
+
+    // --- ESTRUCTURA FINAL ---
+    const data = {
+      title: title,
+      timestamp: new Date().toISOString(),
+      type: 'product',
+      price: priceData,
+      social_proof: socialProof,
+      seller_info: sellerInfo,
+      variants: variants,
+      marketing_points: marketingPoints,
+      media: mediaUrls,
+      source_url: window.location.href
+    };
+
+    console.log('[TikTok Scraper] Datos del producto completamente scrapeados:', data);
+    return data;
+
+  } catch (error) {
+    console.error('[TikTok Scraper] Error scrapeando producto:', error);
+    return {
+      error: true,
+      message: error.message,
+      timestamp: new Date().toISOString(),
+      source_url: window.location.href
+    };
+  }
+}
+
 // Escuchar mensajes desde el popup o background
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[TikTok Scraper] Mensaje recibido:', request);
 
   if (request.action === 'scrapeTikTokAnalytics') {
-    const data = scrapeTikTokAnalytics();
+    // Detectar automáticamente el tipo de página
+    const pageType = detectPageType();
+    console.log('[TikTok Scraper] Tipo de página detectado:', pageType);
+
+    let data;
+
+    if (pageType === 'video_analytics') {
+      console.log('[TikTok Scraper] Scrapeando analytics de video...');
+      data = scrapeTikTokAnalytics();
+    } else if (pageType === 'product') {
+      console.log('[TikTok Scraper] Scrapeando producto de TikTok Shop...');
+      data = scrapeTikTokShopProduct();
+    } else {
+      console.error('[TikTok Scraper] Tipo de página no soportado:', window.location.href);
+      data = {
+        error: true,
+        message: 'Página no soportada. Debe estar en TikTok Analytics o TikTok Shop.',
+        pageUrl: window.location.href,
+        timestamp: new Date().toISOString()
+      };
+    }
+
     console.log('[TikTok Scraper] Enviando respuesta:', data);
 
     // Mostrar notificación
     if (window.showToastNotification) {
-      window.showToastNotification('✅ Datos scrapeados y enviados correctamente', 'success');
+      if (data.error) {
+        window.showToastNotification('❌ Error al scrapear', 'error');
+      } else {
+        window.showToastNotification('✅ Datos scrapeados correctamente', 'success');
+      }
     }
 
-    sendResponse({ success: true, data: data });
+    sendResponse({ success: !data.error, data: data });
   }
 });
 
