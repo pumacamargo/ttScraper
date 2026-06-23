@@ -193,6 +193,184 @@ function scrapeTikTokAnalytics() {
   }
 }
 
+// --- FUNCIÓN AUXILIAR: Extrae descripción universal agnóstica a formato ---
+function getUniversalDescription() {
+  try {
+    console.log('[TikTok Scraper] Iniciando extracción universal de descripción...');
+
+    const descriptionLines = [];
+
+    // 1. LOCALIZAR ENCABEZADO DE DESCRIPCIÓN (Soporta múltiples idiomas)
+    const headers = Array.from(document.querySelectorAll('h2, h3, h4, strong, div, span, label'));
+    const targetHeader = headers.find(el => {
+      const text = el.innerText.trim().toLowerCase();
+      return text.includes('about this product') ||
+             text.includes('product description') ||
+             text.includes('商品説明') ||
+             text.includes('商品の説明') ||
+             text.includes('description') ||
+             text.includes('details') ||
+             text.includes('features') ||
+             text.includes('specifications') ||
+             text.includes('説明');
+    });
+
+    if (targetHeader) {
+      console.log('[TikTok Scraper] Encabezado de descripción encontrado:', targetHeader.innerText.trim().substring(0, 50));
+
+      // 2. APUNTAR AL CONTENEDOR QUE ALMACENA EL TEXTO
+      const container = targetHeader.nextElementSibling || targetHeader.parentElement;
+
+      if (container) {
+        // 3. TOMAR EL TEXTO PLANO COMPLETO TAL CUAL SE RENDERIZA
+        const rawText = container.innerText || '';
+        console.log('[TikTok Scraper] Longitud del texto extraído:', rawText.length, 'caracteres');
+
+        // 4. ROMPER EL TEXTO POR LÍNEAS PARA PROCESARLAS INDIVIDUALMENTE
+        const rawLines = rawText.split('\n');
+        console.log('[TikTok Scraper] Total de líneas encontradas:', rawLines.length);
+
+        rawLines.forEach((line, index) => {
+          const cleanedLine = line.trim()
+            // Remueve viñetas, puntos, guiones, emojis comunes al inicio
+            .replace(/^[・\*\-\•\s📌✅🔹▪️【】\[\]]+/, '')
+            .trim();
+
+          // FILTROS DE EXCLUSIÓN PARA EVITAR BASURA
+          const isValid = cleanedLine &&
+                         cleanedLine !== targetHeader.innerText.trim() && // No duplicar el título
+                         cleanedLine.length > 5 && // Evita líneas muy cortas
+                         !cleanedLine.toLowerCase().includes('view more') &&
+                         !cleanedLine.toLowerCase().includes('see more') &&
+                         !cleanedLine.toLowerCase().includes('read more') &&
+                         !cleanedLine.toLowerCase().includes('もっと見る') && // "Ver más" en japonés
+                         !cleanedLine.includes('...') &&
+                         cleanedLine.length < 500 && // Evita textos demasiado largos
+                         !descriptionLines.includes(cleanedLine); // Evita duplicados
+
+          if (isValid) {
+            descriptionLines.push(cleanedLine);
+            console.log(`[TikTok Scraper] Línea ${index}:`, cleanedLine.substring(0, 60) + (cleanedLine.length > 60 ? '...' : ''));
+          }
+        });
+      }
+    }
+
+    console.log('[TikTok Scraper] Líneas de descripción extraídas:', descriptionLines.length);
+    return descriptionLines;
+
+  } catch (error) {
+    console.error('[TikTok Scraper] Error extrayendo descripción:', error);
+    return [];
+  }
+}
+
+// --- FUNCIÓN AUXILIAR: Extrae precios con estrategia robusta ---
+function getPriceData() {
+  try {
+    console.log('[TikTok Scraper] Iniciando extracción de precios...');
+
+    const priceData = {
+      current: null,
+      original: null,
+      discount: null
+    };
+
+    // 1. BUSCAR DESCUENTO (Patrón: -XX%)
+    const allElements = Array.from(document.querySelectorAll('*'));
+    const discountEl = allElements.find(el => {
+      // Solo elementos sin hijos (nodos de texto)
+      return el.children.length === 0 && /^-\d+%$/.test(el.innerText.trim());
+    });
+
+    if (discountEl) {
+      priceData.discount = discountEl.innerText.trim();
+      console.log('[TikTok Scraper] Descuento encontrado:', priceData.discount);
+    }
+
+    // 2. BUSCAR PRECIOS NUMÉRICOS (Patrón: 1,234 o 12,345)
+    const potentialPrices = allElements
+      .filter(el => {
+        const text = el.innerText.trim();
+        // Solo elementos sin hijos con patrón numérico de millares
+        return el.children.length === 0 && /^\d{1,3}(,\d{3})+$/.test(text);
+      })
+      .map(el => {
+        const text = el.innerText.trim().replace(/,/g, '');
+        const style = window.getComputedStyle(el);
+        const fontSize = parseFloat(style.fontSize) || 0;
+        const textDecoration = style.textDecoration;
+
+        return {
+          text: text,
+          fontSize: fontSize,
+          textDecoration: textDecoration,
+          element: el
+        };
+      });
+
+    console.log('[TikTok Scraper] Precios potenciales encontrados:', potentialPrices.length);
+
+    if (potentialPrices.length > 0) {
+      // El precio actual tiene el font-size más grande
+      const currentPriceObj = potentialPrices.reduce(
+        (max, p) => p.fontSize > max.fontSize ? p : max,
+        potentialPrices[0]
+      );
+
+      priceData.current = currentPriceObj.text;
+      console.log('[TikTok Scraper] Precio actual:', priceData.current, '(fontSize:', currentPriceObj.fontSize + 'px)');
+
+      // El precio original está tachado O tiene font-size más pequeño
+      const originalPriceObj = potentialPrices.find(p => {
+        const isDifferent = p.text !== currentPriceObj.text;
+        const isStrikethrough = p.textDecoration.includes('line-through');
+        const isSmallerFont = p.fontSize < currentPriceObj.fontSize;
+
+        return isDifferent && (isStrikethrough || isSmallerFont);
+      });
+
+      if (originalPriceObj) {
+        priceData.original = originalPriceObj.text;
+        console.log('[TikTok Scraper] Precio original:', priceData.original, '(fontSize:', originalPriceObj.fontSize + 'px)');
+      }
+    }
+
+    // 3. FALLBACK: Buscar patrón "3,222円" en el texto de la página
+    if (!priceData.current) {
+      console.log('[TikTok Scraper] Usando fallback de búsqueda en texto...');
+      const bodyText = document.body.innerText;
+
+      // Patrón: número con comas + símbolo yen
+      const currentMatch = bodyText.match(/(\d{1,3}(?:,\d{3})+)\s*[円¥]/);
+      if (currentMatch) {
+        priceData.current = currentMatch[1].replace(/,/g, '');
+        console.log('[TikTok Scraper] Precio actual (fallback):', priceData.current);
+      }
+
+      // Buscar precio original con patrón similar (si existe descuento)
+      if (priceData.discount) {
+        const prices = bodyText.match(/(\d{1,3}(?:,\d{3})+)\s*[円¥]/g) || [];
+        if (prices.length > 1) {
+          priceData.original = prices[1].match(/(\d+(?:,\d{3})+)/)[1].replace(/,/g, '');
+          console.log('[TikTok Scraper] Precio original (fallback):', priceData.original);
+        }
+      }
+    }
+
+    console.log('[TikTok Scraper] Datos de precio extraídos:', priceData);
+    return priceData;
+
+  } catch (error) {
+    console.error('[TikTok Scraper] Error extrayendo precios:', error);
+    return {
+      current: null,
+      original: null,
+      discount: null
+    };
+  }
+}
+
 // --- FUNCIÓN AUXILIAR: Extrae imágenes del producto con 3 filtros secuenciales ---
 function getProductImages(productTitle) {
   try {
@@ -295,38 +473,8 @@ function scrapeTikTokShopProduct() {
       console.log('[TikTok Scraper] Título (fallback):', title);
     }
 
-    // --- 2. PRECIOS (Dinámico por patrón) ---
-    const priceData = { current: null, original: null, discount: null };
-    const priceSymbols = /[¥$€£₹]/;
-    const allText = document.body.innerText;
-
-    // Buscar todos los elementos con números y símbolos de moneda
-    const textElements = document.querySelectorAll('span, div, p');
-    const priceElements = [];
-
-    textElements.forEach(el => {
-      const text = el.textContent.trim();
-      if (priceSymbols.test(text) && /[\d.]+/.test(text)) {
-        priceElements.push(text);
-      }
-    });
-
-    // El primer precio suele ser el actual, el segundo el original
-    if (priceElements.length > 0) {
-      priceData.current = priceElements[0];
-      console.log('[TikTok Scraper] Precio actual:', priceData.current);
-    }
-    if (priceElements.length > 1) {
-      priceData.original = priceElements[1];
-      console.log('[TikTok Scraper] Precio original:', priceData.original);
-    }
-
-    // Buscar descuento (usualmente en porcentaje)
-    const discountMatch = allText.match(/(\d+)%\s*off/i) || allText.match(/save\s+(\d+)%/i);
-    if (discountMatch) {
-      priceData.discount = discountMatch[1] + '%';
-      console.log('[TikTok Scraper] Descuento:', priceData.discount);
-    }
+    // --- 2. PRECIOS (Extracción robusta por patrón y CSS) ---
+    const priceData = getPriceData();
 
     // --- 3. SOCIAL PROOF (Rating, Reviews, Sales) ---
     const socialProof = {
@@ -334,6 +482,8 @@ function scrapeTikTokShopProduct() {
       reviews_count: null,
       sales_volume: null
     };
+
+    const allText = document.body.innerText;
 
     // Buscar rating (patrón: número.número)
     const ratingMatch = allText.match(/(\d+\.\d+)\s*(stars?|rating)?/);
@@ -418,25 +568,8 @@ function scrapeTikTokShopProduct() {
       if (sizes.length > 0) variants['Size'] = sizes;
     }
 
-    // --- 6. PUNTOS DE MARKETING (Features/Descripción) ---
-    const marketingPoints = [];
-
-    // Buscar sección de descripción o features
-    const descContainers = document.querySelectorAll('[class*="description"], [class*="features"], [class*="about"]');
-
-    descContainers.forEach(container => {
-      const listItems = container.querySelectorAll('li, [class*="point"], [class*="feature"]');
-      listItems.forEach(item => {
-        const text = item.textContent.trim();
-        // Limpiar viñetas y caracteres especiales
-        const cleanText = text.replace(/^[\s・*\-•]+/, '').trim();
-        if (cleanText && !marketingPoints.includes(cleanText)) {
-          marketingPoints.push(cleanText);
-        }
-      });
-    });
-
-    console.log('[TikTok Scraper] Puntos de marketing encontrados:', marketingPoints.length);
+    // --- 6. DESCRIPCIÓN DEL PRODUCTO (Extracción universal agnóstica) ---
+    const marketingPoints = getUniversalDescription();
 
     // --- 7. IMÁGENES DINÁMICAS (Extracción robusta) ---
     const mediaUrls = getProductImages(title);
