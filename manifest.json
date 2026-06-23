@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "TikTok Analytics Scraper",
+  "version": "1.0",
+  "description": "Scrape TikTok video analytics and send to webhook",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://www.tiktok.com/*"
+  ],
+  "action": {
+    "default_title": "Scrapear y enviar analytics"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.tiktok.com/*"],
+      "js": ["notification.js", "content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}
