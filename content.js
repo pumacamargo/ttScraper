@@ -306,29 +306,36 @@ function getUniversalPrice() {
       }
     }
 
-    // 2. BUSCAR PRECIO ORIGINAL (Elemento tachado con números)
-    const struckPrice = allElements.find(el => {
-      if (!el.innerText) return false; // Proteger contra innerText undefined
-      const hasChildren = el.children.length === 0;
-      const isStrikethrough = window.getComputedStyle(el).textDecoration.includes('line-through');
-      const hasNumbers = /[\d,]+/.test(el.innerText);
-      return hasChildren && isStrikethrough && hasNumbers;
-    });
-
-    if (struckPrice) {
-      priceData.original = struckPrice.innerText.replace(/[^\d]/g, '');
-      console.log('[TikTok Scraper] Precio original encontrado:', priceData.original);
-    }
-
-    // 3. BUSCAR DESCUENTO (Patrón: -XX%)
+    // 2. EXTRACCIÓN DE DESCUENTO (Solo si contiene explícitamente '-' y '%')
+    // Restringimos a elementos de texto plano pequeños (<= 5 caracteres)
     const discountEl = allElements.find(el => {
-      if (!el.innerText) return false; // Proteger contra innerText undefined
-      return el.children.length === 0 && /^-\d+%$/.test(el.innerText.trim());
+      if (!el.innerText || el.children.length > 0) return false;
+      const text = el.innerText.trim();
+      return /^-\d+%$/.test(text) && text.length <= 5;
     });
 
     if (discountEl) {
       priceData.discount = discountEl.innerText.trim();
       console.log('[TikTok Scraper] Descuento encontrado:', priceData.discount);
+    }
+
+    // 3. EXTRACCIÓN DEL PRECIO ORIGINAL (SOLO si existe descuento real y tiene line-through)
+    // Condicional de dependencia: solo buscar si ya encontramos un descuento
+    if (priceData.discount) {
+      console.log('[TikTok Scraper] Buscando precio original (descuento confirmado)...');
+      const struckPrice = allElements.find(el => {
+        if (!el.innerText) return false;
+        return el.children.length === 0 &&
+               window.getComputedStyle(el).textDecoration.includes('line-through') &&
+               /[\d,]+/.test(el.innerText);
+      });
+
+      if (struckPrice && struckPrice.innerText) {
+        priceData.original = struckPrice.innerText.replace(/[^\d]/g, '');
+        console.log('[TikTok Scraper] Precio original encontrado:', priceData.original);
+      }
+    } else {
+      console.log('[TikTok Scraper] Sin descuento detectado, omitiendo búsqueda de precio original');
     }
 
     console.log('[TikTok Scraper] Datos de precio extraídos:', priceData);
