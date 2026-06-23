@@ -1,7 +1,7 @@
 // Content script - Se ejecuta en el contexto de la página de TikTok
 
 // --- VERSIÓN DEL SCRAPER (definida una sola vez) ---
-const SCRAPER_VERSION = '2.0.2';
+const SCRAPER_VERSION = '2.0.3';
 
 console.log('[TikTok Scraper] Content script cargado - Versión:', SCRAPER_VERSION);
 
@@ -470,6 +470,33 @@ function getProductImages(productTitle) {
   }
 }
 
+function getTikTokProductId() {
+  try {
+    const url = window.location.href;
+
+    // Expresión regular que busca una serie de 15 o más dígitos continuos después de /pdp/ o en la URL
+    const match = url.match(/\/pdp\/.*\/(\d{15,})/) || url.match(/\/pdp\/(\d{15,})/);
+
+    if (match && match[1]) {
+      console.log('[TikTok Scraper] Product ID encontrado:', match[1]);
+      return match[1];
+    }
+
+    // Fallback en caso de que la estructura de la URL varíe ligeramente
+    const secondaryMatch = url.match(/(\d{17,19})/);
+    if (secondaryMatch) {
+      console.log('[TikTok Scraper] Product ID encontrado (fallback):', secondaryMatch[1]);
+      return secondaryMatch[1];
+    }
+
+    console.log('[TikTok Scraper] Product ID no encontrado en URL:', url);
+    return null;
+  } catch (error) {
+    console.error('[TikTok Scraper] Error en getTikTokProductId:', error);
+    return null;
+  }
+}
+
 function checkFreeShipping() {
   try {
     // 1. Obtener todo el texto plano de la página en minúsculas
@@ -622,9 +649,18 @@ function scrapeTikTokShopProduct() {
       console.error('[TikTok Scraper] Error en free shipping:', e);
     }
 
+    // --- 9. PRODUCT ID (Identificador único de TikTok) ---
+    let product_id = null;
+    try {
+      product_id = getTikTokProductId();
+    } catch (e) {
+      console.error('[TikTok Scraper] Error al extraer product_id:', e);
+    }
+
     // --- ESTRUCTURA FINAL ---
     const data = {
       scraper_version: SCRAPER_VERSION,
+      product_id: product_id,
       title: title,
       timestamp: new Date().toISOString(),
       type: 'product',
