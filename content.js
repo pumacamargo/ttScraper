@@ -276,11 +276,12 @@ function getUniversalPrice() {
 
     // 1. BUSCAR PRECIO ACTUAL (Número antes de 円 o elemento con solo números)
     const priceContainer = allElements.find(el => {
+      if (!el.innerText) return false; // Proteger contra innerText undefined
       const text = el.innerText.trim();
       // Patrón: número con comas (1,234) O elemento que contiene 円 en su padre
       const hasNumberFormat = /^\d{1,3}(,\d{3})+$/.test(text);
       const isPlainNumber = el.children.length === 0 && /^\d+$/.test(text.replace(/,/g, ''));
-      const parentHasYen = el.parentElement && el.parentElement.innerText.includes('円');
+      const parentHasYen = el.parentElement && el.parentElement.innerText && el.parentElement.innerText.includes('円');
 
       return (hasNumberFormat && el.children.length === 0) ||
              (isPlainNumber && parentHasYen);
@@ -302,6 +303,7 @@ function getUniversalPrice() {
 
     // 2. BUSCAR PRECIO ORIGINAL (Elemento tachado con números)
     const struckPrice = allElements.find(el => {
+      if (!el.innerText) return false; // Proteger contra innerText undefined
       const hasChildren = el.children.length === 0;
       const isStrikethrough = window.getComputedStyle(el).textDecoration.includes('line-through');
       const hasNumbers = /[\d,]+/.test(el.innerText);
@@ -314,9 +316,10 @@ function getUniversalPrice() {
     }
 
     // 3. BUSCAR DESCUENTO (Patrón: -XX%)
-    const discountEl = allElements.find(el =>
-      el.children.length === 0 && /^-\d+%$/.test(el.innerText.trim())
-    );
+    const discountEl = allElements.find(el => {
+      if (!el.innerText) return false; // Proteger contra innerText undefined
+      return el.children.length === 0 && /^-\d+%$/.test(el.innerText.trim());
+    });
 
     if (discountEl) {
       priceData.discount = discountEl.innerText.trim();
@@ -483,6 +486,10 @@ function scrapeTikTokShopProduct() {
       title = document.title.split('|')[0].trim() || 'Unknown Product';
       console.log('[TikTok Scraper] Título (fallback):', title);
     }
+
+    // --- DEFINIR ALLTEXT (Texto plano de toda la página) ---
+    const allText = document.body.innerText || '';
+    console.log('[TikTok Scraper] Longitud de texto plano:', allText.length);
 
     // --- 2. PRECIOS (Extracción universal limpia - con o sin descuento) ---
     const priceData = getUniversalPrice();
